@@ -397,15 +397,20 @@ class WordDocumentUpdater {
             // Load target document
             const targetZip = await JSZip.loadAsync(file);
             
-            // IMPROVED LOGIC: Extract only the body content from target and merge it 
-            // with the template's document structure, preserving headers/footers
-            
             // 1. Get the main document content from both files
             const documentXmlPath = this.docxStructure.mainDocument;
-            const targetDocumentXml = await targetZip.file(documentXmlPath)?.async('string');
+            let targetDocumentXml = await targetZip.file(documentXmlPath)?.async('string');
             
             if (!targetDocumentXml) {
                 throw new Error(`Could not find ${documentXmlPath} in the target file: ${file.name}`);
+            }
+
+            // 1. Prioritized Execution: Insert the new section first.
+            try {
+                this.log('Attempting to insert Process Flow Chart section...', 'info');
+                targetDocumentXml = this.insertProcessFlowChartSection(targetDocumentXml);
+            } catch (error) {
+                this.log(`Could not insert flow chart section: ${error.message}`, 'warn');
             }
 
             // 2. Load a fresh copy of the template zip to work with
@@ -451,12 +456,12 @@ class WordDocumentUpdater {
             this.log(`Copying formatting files and preserving template spacing settings...`, 'info');
             const otherStyleFiles = this.docxStructure.styleFiles.filter(p => p !== 'word/styles.xml');
             for (const stylePath of otherStyleFiles) {
-                if (stylePath === 'word/settings.xml') {
-                    // For settings.xml, preserve template version (contains spacing settings)
+                // 6. Font Consistency: Skip fontTable.xml from target to use template's fonts.
+                if (stylePath === 'word/settings.xml' || stylePath === 'word/fontTable.xml') {
                     if (this.debugMode) {
-                        this.log('Preserving template settings.xml for exact spacing.', 'info');
+                        this.log(`Preserving template file to ensure consistent settings and fonts: ${stylePath}`, 'info');
                     }
-                    continue; // Skip copying from target, keep template's settings
+                    continue; // Skip copying from target, keep template's version
                 }
                 
                 const styleFile = targetZip.file(stylePath);
@@ -492,6 +497,89 @@ class WordDocumentUpdater {
         } catch (error) {
             throw new Error(`Failed to process document: ${error.message}`);
         }
+    }
+
+    // 2-5. New section insertion logic
+    insertProcessFlowChartSection(documentXml) {
+        const parser = new DOMParser();
+        const serializer = new XMLSerializer();
+        const doc = parser.parseFromString(documentXml, "text/xml");
+        const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+        const body = doc.querySelector('body');
+
+        if (!body) {
+            this.log('Could not find body in document.xml to insert section', 'warn');
+            return documentXml;
+        }
+
+        const paragraphs = Array.from(body.querySelectorAll('p'));
+        let targetParagraph = null;
+        let subSectionParagraph = null;
+
+        // 2. Locating the Anchor Point
+        for (let i = 0; i < paragraphs.length; i++) {
+            const p = paragraphs[i];
+            const hasNumPr = p.querySelector('pPr > numPr');
+            const textContent = Array.from(p.querySelectorAll('r > t')).map(t => t.textContent).join('').toUpperCase();
+
+            if (hasNumPr && textContent.includes('PROCEDURE')) {
+                targetParagraph = p;
+                if ((i + 1) < paragraphs.length) {
+                    subSectionParagraph = paragraphs[i + 1];
+                }
+                break;
+            }
+        }
+
+        if (!targetParagraph) {
+            this.log('Could not find "Procedure" heading to insert flow chart before.', 'warn');
+            return documentXml;
+        }
+
+        // 3. Cloning for Perfect Style Inheritance
+        const newHeading = targetParagraph.cloneNode(true);
+
+        // 4. Formatting the New Heading
+        Array.from(newHeading.querySelectorAll('r')).forEach(r => r.remove());
+
+        const newRun = doc.createElementNS(ns, 'r');
+        const runProps = doc.createElementNS(ns, 'rPr');
+        const bold = doc.createElementNS(ns, 'b');
+        runProps.appendChild(bold);
+        newRun.appendChild(runProps);
+
+        const textElement = doc.createElementNS(ns, 't');
+        textElement.setAttribute('xml:space', 'preserve');
+        textElement.textContent = 'PROCESS FLOW CHART';
+        newRun.appendChild(textElement);
+        newHeading.appendChild(newRun);
+
+        // 4. Formatting "NA" content
+        const naParagraph = doc.createElementNS(ns, 'p');
+        if (subSectionParagraph) {
+            const subSectionPPr = subSectionParagraph.querySelector('pPr');
+            if (subSectionPPr) {
+                const clonedPPr = subSectionPPr.cloneNode(true);
+                const numPr = clonedPPr.querySelector('numPr');
+                if (numPr) {
+                    numPr.remove();
+                }
+                naParagraph.appendChild(clonedPPr);
+            }
+        }
+        const naRun = doc.createElementNS(ns, 'r');
+        const naText = doc.createElementNS(ns, 't');
+        naText.textContent = 'NA';
+        naRun.appendChild(naText);
+        naParagraph.appendChild(naRun);
+
+        // 5. Final Insertion
+        body.insertBefore(newHeading, targetParagraph);
+        body.insertBefore(naParagraph, targetParagraph);
+
+        this.log('Successfully inserted "PROCESS FLOW CHART" section.', 'success');
+
+        return serializer.serializeToString(doc);
     }
 
     // Helper: Get all styleIds referenced in a given XML string (for header/footer)
