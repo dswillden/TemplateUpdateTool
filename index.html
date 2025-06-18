@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Word Document Header/Footer Updater</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="app-header">
+            <h1>Word Document Header/Footer Updater</h1>
+            <p class="text-secondary">Update headers and footers across multiple Word documents using a template</p>
+        </header>
+
+        <!-- Browser Compatibility Check -->
+        <div id="compatibility-warning" class="status status--warning hidden">
+            <strong>Compatibility Warning:</strong> Some features may not work in your browser. Please use a modern browser like Chrome, Firefox, or Edge.
+        </div>
+
+        <!-- Template Upload Section -->
+        <section class="card section">
+            <div class="card__header">
+                <h2>Step 1: Upload Template Document</h2>
+                <p class="text-secondary">Select a Word document (.docx) that contains the headers and footers you want to use</p>
+            </div>
+            <div class="card__body">
+                <div class="upload-zone" id="template-upload-zone">
+                    <div class="upload-zone__content">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7,10 12,15 17,10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        <p><strong>Drop your template document here</strong></p>
+                        <p class="text-secondary">or <button type="button" class="btn-link" id="template-browse">browse files</button></p>
+                        <input type="file" id="template-input" accept=".docx" hidden>
+                    </div>
+                </div>
+                
+                <div id="template-status" class="status-section hidden">
+                    <div class="status status--success">
+                        <span id="template-filename"></span>
+                        <button type="button" class="btn btn--sm" id="remove-template">Remove</button>
+                    </div>
+                </div>
+
+                <div id="template-preview" class="preview-section hidden">
+                    <h4>Extracted Headers & Footers Preview:</h4>
+                    <div id="preview-content" class="preview-content"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Target Documents Upload Section -->
+        <section class="card section">
+            <div class="card__header">
+                <h2>Step 2: Upload Target Documents</h2>
+                <p class="text-secondary">Select the Word documents that need their headers and footers updated</p>
+            </div>
+            <div class="card__body">
+                <div class="upload-zone" id="target-upload-zone">
+                    <div class="upload-zone__content">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                        </svg>
+                        <p><strong>Drop target documents here</strong></p>
+                        <p class="text-secondary">or <button type="button" class="btn-link" id="target-browse">browse files</button></p>
+                        <input type="file" id="target-input" accept=".docx" multiple hidden>
+                    </div>
+                </div>
+                
+                <div id="target-files-list" class="files-list hidden">
+                    <h4>Selected Files:</h4>
+                    <div id="target-files"></div>
+                    <button type="button" class="btn btn--secondary" id="clear-targets">Clear All</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Processing Section -->
+        <section class="card section">
+            <div class="card__header">
+                <h2>Step 3: Process Documents</h2>
+                <p class="text-secondary">Apply template headers and footers to target documents</p>
+            </div>
+            <div class="card__body">
+                <div class="processing-controls">
+                    <button type="button" class="btn btn--primary btn--lg" id="process-btn" disabled>
+                        Process Documents
+                    </button>
+                    <div class="processing-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="debug-mode">
+                            <span>Enable debug mode</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="processing-status" class="processing-status hidden">
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <span id="progress-text">0%</span>
+                    </div>
+                    <div id="processing-log" class="processing-log"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download Section -->
+        <section class="card section">
+            <div class="card__header">
+                <h2>Step 4: Download Processed Documents</h2>
+                <p class="text-secondary">Download your updated documents</p>
+            </div>
+            <div class="card__body">
+                <div id="download-section" class="download-section hidden">
+                    <div class="download-controls">
+                        <button type="button" class="btn btn--primary" id="download-all">
+                            Download All as ZIP
+                        </button>
+                    </div>
+                    <div id="processed-files" class="processed-files"></div>
+                </div>
+                <div id="no-processed-files" class="empty-state">
+                    <p class="text-secondary">No processed documents available for download</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Error Handling & Troubleshooting -->
+        <section class="card section">
+            <div class="card__header">
+                <h2>Troubleshooting</h2>
+            </div>
+            <div class="card__body">
+                <div class="troubleshooting-content">
+                    <h4>Common Issues & Solutions:</h4>
+                    <ul class="troubleshooting-list">
+                        <li><strong>Protected Document Error:</strong> Disable Protected View in Word by going to File > Options > Trust Center > Trust Center Settings > Protected View and unchecking all options.</li>
+                        <li><strong>File Too Large:</strong> Maximum file size is 50MB. Try reducing the file size or processing fewer documents at once.</li>
+                        <li><strong>Corrupted File:</strong> Ensure the file is a valid .docx document and not password-protected.</li>
+                        <li><strong>No Headers/Footers Found:</strong> The template document must contain headers or footers. Add them in Word before uploading.</li>
+                        <li><strong>Browser Compatibility:</strong> Use Chrome, Firefox, or Edge for best results. Safari may have limited functionality.</li>
+                    </ul>
+                </div>
+                
+                <div id="error-log" class="error-log hidden">
+                    <h4>Error Details:</h4>
+                    <div id="error-details" class="error-details"></div>
+                    <button type="button" class="btn btn--secondary btn--sm" id="clear-errors">Clear Errors</button>
+                </div>
+            </div>
+        </section>
+
+        <footer class="app-footer">
+            <p class="text-secondary">
+                This application processes Word documents entirely in your browser. No files are uploaded to any server.
+                <br>
+                Supported format: .docx | Maximum file size: 50MB per file
+            </p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
