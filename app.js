@@ -21,7 +21,14 @@ class WordDocumentUpdater {
             headers: ['word/header1.xml', 'word/header2.xml', 'word/header3.xml'],
             footers: ['word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml'],
             relationships: 'word/_rels/document.xml.rels',
-            contentTypes: '[Content_Types].xml'
+            contentTypes: '[Content_Types].xml',
+            styleFiles: [
+                'word/styles.xml',
+                'word/theme/theme1.xml',
+                'word/fontTable.xml',
+                'word/settings.xml',
+                'word/numbering.xml'
+            ]
         };
         
         this.errorMessages = {
@@ -412,13 +419,54 @@ class WordDocumentUpdater {
                 throw new Error(`Could not find ${documentXmlPath} in template file`);
             }
 
-            // 4. Merge the documents: take body from target, keep sectPr from template
+            // 4. NEW: Intelligently merge styles.xml, ensuring header/footer styles from template are present
+            this.log('Merging styles.xml for exact header/footer formatting...', 'info');
+            try {
+                const templateStylesXml = await newTemplateZip.file('word/styles.xml')?.async('string');
+                const targetStylesXml = await targetZip.file('word/styles.xml')?.async('string');
+
+                // Read all header/footer XML from template
+                const headerXmls = [];
+                for (const headerPath of this.docxStructure.headers) {
+                    const f = newTemplateZip.file(headerPath);
+                    if (f) headerXmls.push(await f.async('string'));
+                }
+                const footerXmls = [];
+                for (const footerPath of this.docxStructure.footers) {
+                    const f = newTemplateZip.file(footerPath);
+                    if (f) footerXmls.push(await f.async('string'));
+                }
+
+                if (templateStylesXml && targetStylesXml) {
+                    const mergedStylesXml = this.mergeStylesXml(templateStylesXml, targetStylesXml, headerXmls, footerXmls);
+                    newTemplateZip.file('word/styles.xml', mergedStylesXml);
+                } else {
+                    this.log('Could not find styles.xml in both template and target. Skipping merge.', 'warn');
+                }
+            } catch (error) {
+                this.log(`Error during style merge: ${error.message}`, 'error');
+            }
+
+            // 5. Copy other critical formatting files from target to the new zip
+            this.log(`Copying other formatting files from ${file.name}...`, 'info');
+            const otherStyleFiles = this.docxStructure.styleFiles.filter(p => p !== 'word/styles.xml');
+            for (const stylePath of otherStyleFiles) {
+                const styleFile = targetZip.file(stylePath);
+                if (styleFile) {
+                    const content = await styleFile.async('blob');
+                    newTemplateZip.file(stylePath, content);
+                } else if (this.debugMode) {
+                    this.log(`Style file not found in target, skipping: ${stylePath}`, 'info');
+                }
+            }
+
+            // 6. Merge the document body content
             const mergedDocumentXml = this.mergeDocumentContent(templateDocumentXml, targetDocumentXml);
             
-            // 5. Update the document.xml in the template with merged content
+            // 7. Update the document.xml in the template with merged content
             newTemplateZip.file(documentXmlPath, mergedDocumentXml);
             
-            // 6. Generate processed file from the modified template
+            // 8. Generate processed file from the modified template
             const processedBlob = await newTemplateZip.generateAsync({
                 type: 'blob',
                 mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -435,6 +483,70 @@ class WordDocumentUpdater {
             
         } catch (error) {
             throw new Error(`Failed to process document: ${error.message}`);
+        }
+    }
+
+    // Helper: Get all styleIds referenced in a given XML string (for header/footer)
+    getReferencedStyleIds(xmlString) {
+        const ids = new Set();
+        const regex = /w:([p|r|tbl]Style)[^>]*w:val="([^"]+)"/g;
+        let match;
+        while ((match = regex.exec(xmlString)) !== null) {
+            ids.add(match[2]);
+        }
+        return ids;
+    }
+
+    // Improved mergeStylesXml: ensure all header/footer styleIds from template are present and unmodified
+    mergeStylesXml(templateXml, targetXml, headerXmls, footerXmls) {
+        try {
+            const parser = new DOMParser();
+            const serializer = new XMLSerializer();
+            const templateDoc = parser.parseFromString(templateXml, "text/xml");
+            const targetDoc = parser.parseFromString(targetXml, "text/xml");
+            const templateStyles = templateDoc.querySelector('styles');
+            const targetStyles = targetDoc.querySelector('styles');
+            if (!templateStyles || !targetStyles) throw new Error('Missing <w:styles>');
+
+            // 1. Collect all styleIds referenced in template header/footer XML
+            let referencedIds = new Set();
+            for (const xml of [...headerXmls, ...footerXmls]) {
+                for (const id of this.getReferencedStyleIds(xml)) referencedIds.add(id);
+            }
+
+            // 2. Build a map of styleId -> styleElement for both
+            const targetStyleMap = new Map();
+            targetStyles.querySelectorAll('style').forEach(s => {
+                const id = s.getAttribute('w:styleId');
+                if (id) targetStyleMap.set(id, s);
+            });
+            const templateStyleMap = new Map();
+            templateStyles.querySelectorAll('style').forEach(s => {
+                const id = s.getAttribute('w:styleId');
+                if (id) templateStyleMap.set(id, s);
+            });
+
+            // 3. For each referencedId, if not in target or different, add template's style
+            let appended = 0;
+            referencedIds.forEach(id => {
+                const templateStyle = templateStyleMap.get(id);
+                const targetStyle = targetStyleMap.get(id);
+                if (!targetStyle && templateStyle) {
+                    // Not present in target, append
+                    const imported = targetDoc.importNode(templateStyle, true);
+                    targetStyles.appendChild(imported);
+                    appended++;
+                } else if (targetStyle && templateStyle && serializer.serializeToString(targetStyle) !== serializer.serializeToString(templateStyle)) {
+                    // Present but different, replace
+                    targetStyles.replaceChild(targetDoc.importNode(templateStyle, true), targetStyle);
+                    appended++;
+                }
+            });
+            if (this.debugMode) this.log(`Ensured ${appended} header/footer styles from template are present in merged styles.xml.`, 'info');
+            return serializer.serializeToString(targetDoc);
+        } catch (error) {
+            this.log(`Error merging styles.xml: ${error.message}`, 'error');
+            throw error;
         }
     }
 
