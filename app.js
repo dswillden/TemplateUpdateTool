@@ -106,6 +106,10 @@ class WordDocumentUpdater {
         // Error handling
         const clearErrors = document.getElementById('clear-errors');
         clearErrors.addEventListener('click', () => this.clearErrors());
+
+        // Preview Modal
+        const previewModalClose = document.getElementById('preview-modal-close');
+        previewModalClose.addEventListener('click', () => this.closePreviewModal());
     }
 
     handleDragOver(e) {
@@ -386,39 +390,36 @@ class WordDocumentUpdater {
             // Load target document
             const targetZip = await JSZip.loadAsync(file);
             
-            // Extract headers and footers from template
-            const templateHeaders = {};
-            const templateFooters = {};
+            // IMPROVED LOGIC: Extract only the body content from target and merge it 
+            // with the template's document structure, preserving headers/footers
             
-            for (const headerPath of this.docxStructure.headers) {
-                const headerFile = this.templateZip.file(headerPath);
-                if (headerFile) {
-                    templateHeaders[headerPath] = await headerFile.async('text');
-                }
+            // 1. Get the main document content from both files
+            const documentXmlPath = this.docxStructure.mainDocument;
+            const targetDocumentXml = await targetZip.file(documentXmlPath)?.async('string');
+            
+            if (!targetDocumentXml) {
+                throw new Error(`Could not find ${documentXmlPath} in the target file: ${file.name}`);
             }
+
+            // 2. Load a fresh copy of the template zip to work with
+            const templateBlob = await this.templateFile.arrayBuffer();
+            const newTemplateZip = await JSZip.loadAsync(templateBlob);
             
-            for (const footerPath of this.docxStructure.footers) {
-                const footerFile = this.templateZip.file(footerPath);
-                if (footerFile) {
-                    templateFooters[footerPath] = await footerFile.async('text');
-                }
+            // 3. Get the template's document.xml to preserve its structure
+            const templateDocumentXml = await newTemplateZip.file(documentXmlPath)?.async('string');
+            
+            if (!templateDocumentXml) {
+                throw new Error(`Could not find ${documentXmlPath} in template file`);
             }
+
+            // 4. Merge the documents: take body from target, keep sectPr from template
+            const mergedDocumentXml = this.mergeDocumentContent(templateDocumentXml, targetDocumentXml);
             
-            // Apply headers to target document
-            for (const [path, content] of Object.entries(templateHeaders)) {
-                targetZip.file(path, content);
-            }
+            // 5. Update the document.xml in the template with merged content
+            newTemplateZip.file(documentXmlPath, mergedDocumentXml);
             
-            // Apply footers to target document
-            for (const [path, content] of Object.entries(templateFooters)) {
-                targetZip.file(path, content);
-            }
-            
-            // Update relationships if needed
-            await this.updateDocumentRelationships(targetZip, templateHeaders, templateFooters);
-            
-            // Generate processed file
-            const processedBlob = await targetZip.generateAsync({
+            // 6. Generate processed file from the modified template
+            const processedBlob = await newTemplateZip.generateAsync({
                 type: 'blob',
                 mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
             });
@@ -437,74 +438,61 @@ class WordDocumentUpdater {
         }
     }
 
-    async updateDocumentRelationships(targetZip, headers, footers) {
+    mergeDocumentContent(templateXml, targetXml) {
         try {
-            const relsFile = targetZip.file(this.docxStructure.relationships);
-            if (!relsFile) return;
-            
-            const relsContent = await relsFile.async('text');
             const parser = new DOMParser();
-            const relsDoc = parser.parseFromString(relsContent, 'text/xml');
-            
-            // Add relationships for headers and footers if they don't exist
-            const relationships = relsDoc.querySelector('Relationships');
-            if (!relationships) return;
-            
-            let relationshipId = this.getMaxRelationshipId(relsDoc) + 1;
-            
-            // Add header relationships
-            for (const headerPath of Object.keys(headers)) {
-                const fileName = headerPath.split('/').pop();
-                if (!this.relationshipExists(relsDoc, fileName)) {
-                    const rel = relsDoc.createElement('Relationship');
-                    rel.setAttribute('Id', `rId${relationshipId++}`);
-                    rel.setAttribute('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header');
-                    rel.setAttribute('Target', fileName);
-                    relationships.appendChild(rel);
-                }
-            }
-            
-            // Add footer relationships
-            for (const footerPath of Object.keys(footers)) {
-                const fileName = footerPath.split('/').pop();
-                if (!this.relationshipExists(relsDoc, fileName)) {
-                    const rel = relsDoc.createElement('Relationship');
-                    rel.setAttribute('Id', `rId${relationshipId++}`);
-                    rel.setAttribute('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer');
-                    rel.setAttribute('Target', fileName);
-                    relationships.appendChild(rel);
-                }
-            }
-            
             const serializer = new XMLSerializer();
-            const updatedRelsContent = serializer.serializeToString(relsDoc);
-            targetZip.file(this.docxStructure.relationships, updatedRelsContent);
+            
+            // Parse both documents
+            const templateDoc = parser.parseFromString(templateXml, 'text/xml');
+            const targetDoc = parser.parseFromString(targetXml, 'text/xml');
+            
+            // Check for parsing errors
+            if (templateDoc.documentElement.nodeName === 'parsererror' || 
+                targetDoc.documentElement.nodeName === 'parsererror') {
+                throw new Error('Failed to parse XML documents');
+            }
+            
+            // Find the body element in both documents
+            const templateBody = templateDoc.querySelector('body');
+            const targetBody = targetDoc.querySelector('body');
+            
+            if (!templateBody || !targetBody) {
+                throw new Error('Could not find body elements in documents');
+            }
+            
+            // Extract section properties from template (contains header/footer references)
+            const templateSectPr = templateBody.querySelector('sectPr');
+            
+            // Clear the template body content but keep its structure
+            while (templateBody.firstChild) {
+                templateBody.removeChild(templateBody.firstChild);
+            }
+            
+            // Copy all content from target body to template body (except sectPr)
+            const targetChildren = Array.from(targetBody.childNodes);
+            targetChildren.forEach(child => {
+                // Skip the target's sectPr - we want to keep the template's sectPr
+                if (child.nodeType === Node.ELEMENT_NODE && child.nodeName === 'w:sectPr') {
+                    return;
+                }
+                
+                // Import and append the node to template body
+                const importedNode = templateDoc.importNode(child, true);
+                templateBody.appendChild(importedNode);
+            });
+            
+            // Add the template's sectPr at the end (this preserves header/footer references)
+            if (templateSectPr) {
+                templateBody.appendChild(templateSectPr);
+            }
+            
+            // Serialize the modified template document
+            return serializer.serializeToString(templateDoc);
             
         } catch (error) {
-            if (this.debugMode) {
-                this.log(`Warning: Could not update relationships: ${error.message}`, 'warning');
-            }
+            throw new Error(`Failed to merge document content: ${error.message}`);
         }
-    }
-
-    getMaxRelationshipId(relsDoc) {
-        const relationships = relsDoc.querySelectorAll('Relationship[Id^="rId"]');
-        let maxId = 0;
-        
-        relationships.forEach(rel => {
-            const id = rel.getAttribute('Id');
-            const numId = parseInt(id.replace('rId', ''));
-            if (numId > maxId) {
-                maxId = numId;
-            }
-        });
-        
-        return maxId;
-    }
-
-    relationshipExists(relsDoc, target) {
-        const relationships = relsDoc.querySelectorAll(`Relationship[Target="${target}"]`);
-        return relationships.length > 0;
     }
 
     generateProcessedFileName(originalName) {
@@ -554,9 +542,14 @@ class WordDocumentUpdater {
                         <div class="processed-file-name">${file.name}</div>
                         <div class="processed-file-status">Processed from: ${file.originalName} • ${fileSize}</div>
                     </div>
-                    <button type="button" class="btn btn--secondary btn--sm" onclick="app.downloadFile(${index})">
-                        Download
-                    </button>
+                    <div class="processed-file-actions">
+                        <button type="button" class="btn btn--secondary btn--sm" onclick="app.previewFile(${index})">
+                            Preview
+                        </button>
+                        <button type="button" class="btn btn--secondary btn--sm" onclick="app.downloadFile(${index})">
+                            Download
+                        </button>
+                    </div>
                 </div>
             `;
         });
@@ -569,6 +562,55 @@ class WordDocumentUpdater {
     downloadFile(index) {
         const file = this.processedFiles[index];
         saveAs(file.blob, file.name);
+    }
+
+    async previewFile(index) {
+        const file = this.processedFiles[index];
+        if (!file) {
+            this.logError('Preview Error', 'File not found.');
+            return;
+        }
+
+        const previewModal = document.getElementById('preview-modal');
+        const previewContainer = document.getElementById('preview-container');
+        const previewFilename = document.getElementById('preview-filename');
+
+        if (!previewModal || !previewContainer || !previewFilename) {
+            this.logError('UI Error', 'Could not find preview modal elements. Please check index.html');
+            return;
+        }
+
+        previewFilename.textContent = file.name;
+        previewContainer.innerHTML = ''; // Clear previous content
+        previewModal.classList.remove('hidden');
+
+        try {
+            // Check if docx-preview library is available
+            const docxPreview = window.docx || window.docxPreview;
+            if (!docxPreview) {
+                throw new Error('docx-preview library is not loaded. Please refresh the page and try again.');
+            }
+
+            // Use the docx-preview library to render the document
+            await docxPreview.renderAsync(file.blob, previewContainer);
+        } catch (error) {
+            this.logError(`Preview Error (${file.name})`, `Failed to render preview: ${error.message}`);
+            previewContainer.innerHTML = `<div class="error-message">
+                <p><strong>Preview Failed:</strong> ${error.message}</p>
+                <p>You can still download the file to check if it opens correctly in Microsoft Word.</p>
+            </div>`;
+        }
+    }
+
+    closePreviewModal() {
+        const previewModal = document.getElementById('preview-modal');
+        if (previewModal) {
+            previewModal.classList.add('hidden');
+        }
+        const previewContainer = document.getElementById('preview-container');
+        if (previewContainer) {
+            previewContainer.innerHTML = ''; // Clean up preview content
+        }
     }
 
     async downloadAllFiles() {
