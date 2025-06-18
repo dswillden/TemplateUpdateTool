@@ -447,10 +447,18 @@ class WordDocumentUpdater {
                 this.log(`Error during style merge: ${error.message}`, 'error');
             }
 
-            // 5. Copy other critical formatting files from target to the new zip
-            this.log(`Copying other formatting files from ${file.name}...`, 'info');
+            // 5. Copy other critical formatting files from target to the new zip, BUT preserve template settings
+            this.log(`Copying formatting files and preserving template spacing settings...`, 'info');
             const otherStyleFiles = this.docxStructure.styleFiles.filter(p => p !== 'word/styles.xml');
             for (const stylePath of otherStyleFiles) {
+                if (stylePath === 'word/settings.xml') {
+                    // For settings.xml, preserve template version (contains spacing settings)
+                    if (this.debugMode) {
+                        this.log('Preserving template settings.xml for exact spacing.', 'info');
+                    }
+                    continue; // Skip copying from target, keep template's settings
+                }
+                
                 const styleFile = targetZip.file(stylePath);
                 if (styleFile) {
                     const content = await styleFile.async('blob');
@@ -573,8 +581,9 @@ class WordDocumentUpdater {
                 throw new Error('Could not find body elements in documents');
             }
             
-            // Extract section properties from template (contains header/footer references)
+            // Extract section properties from both documents
             const templateSectPr = templateBody.querySelector('sectPr');
+            const targetSectPr = targetBody.querySelector('sectPr');
             
             // Clear the template body content but keep its structure
             while (templateBody.firstChild) {
@@ -584,7 +593,7 @@ class WordDocumentUpdater {
             // Copy all content from target body to template body (except sectPr)
             const targetChildren = Array.from(targetBody.childNodes);
             targetChildren.forEach(child => {
-                // Skip the target's sectPr - we want to keep the template's sectPr
+                // Skip the target's sectPr - we want to merge them intelligently
                 if (child.nodeType === Node.ELEMENT_NODE && child.nodeName === 'w:sectPr') {
                     return;
                 }
@@ -594,9 +603,10 @@ class WordDocumentUpdater {
                 templateBody.appendChild(importedNode);
             });
             
-            // Add the template's sectPr at the end (this preserves header/footer references)
+            // Create merged sectPr that uses target layout but applies template header/footer and margins
             if (templateSectPr) {
-                templateBody.appendChild(templateSectPr);
+                const mergedSectPr = this.mergeSectionProperties(templateSectPr, targetSectPr, templateDoc);
+                templateBody.appendChild(mergedSectPr);
             }
             
             // Serialize the modified template document
@@ -605,6 +615,39 @@ class WordDocumentUpdater {
         } catch (error) {
             throw new Error(`Failed to merge document content: ${error.message}`);
         }
+    }
+
+    // NEW: Smart sectPr merging to preserve target page layout but use template headers/footers/margins
+    mergeSectionProperties(templateSectPr, targetSectPr, ownerDocument) {
+        // Start with the target's sectPr to preserve page size, orientation, etc.
+        let mergedSectPr;
+        if (targetSectPr) {
+            mergedSectPr = ownerDocument.importNode(targetSectPr, true);
+        } else {
+            mergedSectPr = ownerDocument.createElement('w:sectPr');
+        }
+
+        // Selectors for elements to be replaced from the template
+        const elementsToTransplant = ['headerReference', 'footerReference', 'pgMar'];
+
+        elementsToTransplant.forEach(tagName => {
+            // Remove existing elements from the merged sectPr
+            mergedSectPr.querySelectorAll(tagName).forEach(el => el.remove());
+            
+            // Get the corresponding elements from the template
+            const templateElements = templateSectPr.querySelectorAll(tagName);
+            
+            // Append the template elements to the merged sectPr
+            templateElements.forEach(el => {
+                mergedSectPr.appendChild(ownerDocument.importNode(el, true));
+            });
+        });
+
+        if (this.debugMode) {
+            this.log('Merged sectPr: used target layout, but transplanted template header/footer references and page margins.', 'info');
+        }
+
+        return mergedSectPr;
     }
 
     generateProcessedFileName(originalName) {
