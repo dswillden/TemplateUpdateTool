@@ -1,254 +1,205 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; frame-src 'self' https://www.youtube.com https://trytako.com; child-src 'self'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests; block-all-mixed-content;">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Word Document Header/Footer Updater</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Word Document Header/Footer Updater - Conservative Image Preservation</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://unpkg.com/docx-preview@0.1.22/dist/docx-preview.min.js"></script>
-    <style>
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .modal.hidden {
-            display: none;
-        }
-        .modal__content {
-            background-color: #fff;
-            padding: 20px;
-            border-radius: 5px;
-            width: 80%;
-            max-width: 900px;
-            height: 80%;
-            display: flex;
-            flex-direction: column;
-        }
-        .modal__header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
-            margin-bottom: 10px;
-        }
-        .modal__body {
-            flex-grow: 1;
-            overflow-y: auto;
-        }
-        #preview-container .docx-wrapper {
-            background-color: #fff;
-            padding: 20px;
-        }
-        .btn-close {
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            cursor: pointer;
-        }
-    </style>
+    <link rel="stylesheet" href="style_new.css">
 </head>
 <body>
     <div class="container">
-        <header class="app-header">
-            <h1>Word Document Header/Footer Updater</h1>
-            <p class="text-secondary">Update headers and footers across multiple Word documents using a template</p>
-        </header>
+    <header class="app-header">
+    <h1>Word Document Header/Footer Updater</h1>
+    <p class="text-secondary">Conservative approach: Start with target document, replace only headers/footers to preserve images</p>
+    </header>
 
-        <!-- Browser Compatibility Check -->
-        <div id="compatibility-warning" class="status status--warning hidden">
-            <strong>Compatibility Warning:</strong> Some features may not work in your browser. Please use a modern browser like Chrome, Firefox, or Edge.
-        </div>
+    <!-- Browser Compatibility Check -->
+    <div id="compatibility-warning" class="status status--warning hidden">
+    <strong>Compatibility Warning:</strong> Some features may not work in your browser. Please use a modern browser like Chrome, Firefox, or Edge.
+    </div>
 
-        <!-- Template Upload Section -->
-        <section class="card section">
-            <div class="card__header">
-                <h2>Step 1: Upload Template Document</h2>
-                <p class="text-secondary">Select a Word document (.docx) that contains the headers and footers you want to use</p>
-            </div>
-            <div class="card__body">
-                <div class="upload-zone" id="template-upload-zone">
-                    <div class="upload-zone__content">
-                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                            <polyline points="7,10 12,15 17,10"/>
-                            <line x1="12" y1="15" x2="12" y2="3"/>
-                        </svg>
-                        <p><strong>Drop your template document here</strong></p>
-                        <p class="text-secondary">or <button type="button" class="btn-link" id="template-browse">browse files</button></p>
-                        <input type="file" id="template-input" accept=".docx" hidden>
-                    </div>
-                </div>
-                
-                <div id="template-status" class="status-section hidden">
-                    <div class="status status--success">
-                        <span id="template-filename"></span>
-                        <button type="button" class="btn btn--sm" id="remove-template">Remove</button>
-                    </div>
-                </div>
+    <!-- Template Upload Section -->
+    <section class="card section">
+    <div class="card__header">
+    <h2>Step 1: Upload Template Document</h2>
+    <p class="text-secondary">Select a Word document (.docx) that contains the headers and footers you want to use. Include "{Enter SOP Title}" placeholder for automatic title insertion.</p>
+    </div>
+    <div class="card__body">
+    <div class="upload-zone" id="template-upload-zone">
+    <div class="upload-zone__content">
+    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+    <polyline points="7,10 12,15 17,10"></polyline>
+    <line x1="12" y1="15" x2="12" y2="3"></line>
+    </svg>
+    <p><strong>Drop your template document here</strong></p>
+    <p class="text-secondary">or <button type="button" class="btn-link" id="template-browse">browse files</button></p>
+    <input type="file" id="template-input" accept=".docx" hidden="">
+    </div>
+    </div>
+    
+    <div id="template-status" class="status-section hidden">
+    <div class="status status--success">
+    <span id="template-filename"></span>
+    <button type="button" class="btn btn--sm" id="remove-template">Remove</button>
+    </div>
+    </div>
 
-                <div id="template-preview" class="preview-section hidden">
-                    <h4>Extracted Headers & Footers Preview:</h4>
-                    <div id="preview-content" class="preview-content"></div>
-                </div>
-            </div>
-        </section>
+    <div id="template-preview" class="preview-section hidden">
+    <h4>Extracted Headers &amp; Footers Preview:</h4>
+    <div id="preview-content" class="preview-content"></div>
+    </div>
+    </div>
+    </section>
 
-        <!-- Target Documents Upload Section -->
-        <section class="card section">
-            <div class="card__header">
-                <h2>Step 2: Upload Target Documents</h2>
-                <p class="text-secondary">Select the Word documents that need their headers and footers updated</p>
-            </div>
-            <div class="card__body">
-                <div class="upload-zone" id="target-upload-zone">
-                    <div class="upload-zone__content">
-                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
-                        </svg>
-                        <p><strong>Drop target documents here</strong></p>
-                        <p class="text-secondary">or <button type="button" class="btn-link" id="target-browse">browse files</button></p>
-                        <input type="file" id="target-input" accept=".docx" multiple hidden>
-                    </div>
-                </div>
-                
-                <div id="target-files-list" class="files-list hidden">
-                    <h4>Selected Files:</h4>
-                    <div id="target-files"></div>
-                    <button type="button" class="btn btn--secondary" id="clear-targets">Clear All</button>
-                </div>
-            </div>
-        </section>
+    <!-- Target Documents Upload Section -->
+    <section class="card section">
+    <div class="card__header">
+    <h2>Step 2: Upload Target Documents</h2>
+    <p class="text-secondary">Select the Word documents that need their headers and footers updated. <strong>Images and all content will be preserved using conservative approach.</strong></p>
+    </div>
+    <div class="card__body">
+    <div class="upload-zone" id="target-upload-zone">
+    <div class="upload-zone__content">
+    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"></path>
+    </svg>
+    <p><strong>Drop target documents here</strong></p>
+    <p class="text-secondary">or <button type="button" class="btn-link" id="target-browse">browse files</button></p>
+    <input type="file" id="target-input" accept=".docx" multiple="" hidden="">
+    </div>
+    </div>
+    
+    <div id="target-files-list" class="files-list hidden">
+    <h4>Selected Files:</h4>
+    <div id="target-files"></div>
+    <button type="button" class="btn btn--secondary" id="clear-targets">Clear All</button>
+    </div>
+    </div>
+    </section>
 
-        <!-- Processing Section -->
-        <section class="card section">
-            <div class="card__header">
-                <h2>Step 3: Process Documents</h2>
-                <p class="text-secondary">Apply template headers and footers to target documents</p>
-            </div>
-            <div class="card__body">
-                <div class="processing-controls">
-                    <button type="button" class="btn btn--primary btn--lg" id="process-btn" disabled>
-                        Process Documents
-                    </button>
-                    <div class="processing-options">
-                        <div class="form-group">
-                            <label class="form-label" for="font-selection">Body Text Font:</label>
-                            <select id="font-selection" class="form-control">
-                                <option value="auto">Auto-detect from template</option>
-                                <option value="Calibri">Calibri</option>
-                                <option value="Arial">Arial</option>
-                                <option value="Times New Roman">Times New Roman</option>
-                                <option value="Helvetica">Helvetica</option>
-                                <option value="Georgia">Georgia</option>
-                                <option value="Verdana">Verdana</option>
-                                <option value="Tahoma">Tahoma</option>
-                                <option value="custom">Custom font...</option>
-                            </select>
-                        </div>
-                        <div class="form-group hidden" id="custom-font-group">
-                            <label class="form-label" for="custom-font-input">Custom Font Name:</label>
-                            <input type="text" id="custom-font-input" class="form-control" placeholder="e.g., Segoe UI, Open Sans">
-                        </div>
-                        <div class="font-preview" id="font-preview">
-                            <span class="text-secondary">Font will be detected when template is loaded</span>
-                        </div>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="debug-mode">
-                            <span>Enable debug mode</span>
-                        </label>
-                    </div>
-                </div>
+    <!-- Processing Section -->
+    <section class="card section">
+    <div class="card__header">
+    <h2>Step 3: Process Documents</h2>
+    <p class="text-secondary">Apply template headers and footers while preserving target document content and images</p>
+    </div>
+    <div class="card__body">
+    <div class="processing-controls">
+    <button type="button" class="btn btn--primary btn--lg" id="process-btn" disabled="">
+    Process Documents
+    </button>
+    <div class="processing-options">
+    <label class="checkbox-label">
+    <input type="checkbox" id="extract-title" checked="">
+    <span>Extract title from target document and insert into template header</span>
+    </label>
+    <label class="checkbox-label">
+    <input type="checkbox" id="insert-flowchart">
+    <span>Insert "Process Flow Chart" section</span>
+    </label>
+    <label class="checkbox-label">
+    <input type="checkbox" id="debug-mode">
+    <span>Enable debug mode for troubleshooting</span>
+    </label>
+    <label class="checkbox-label">
+    <input type="checkbox" id="preserve-target-fonts">
+    <span>Preserve target document fonts (ignore template fonts)</span>
+    </label>
+    <div class="form-group">
+    <label class="form-label">Override font (leave blank to use template font):</label>
+    <input type="text" class="form-control" id="font-override" placeholder="e.g., Arial, Times New Roman">
+    </div>
+    </div>
+    </div>
 
-                <div id="processing-status" class="processing-status hidden">
-                    <div class="progress-container">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="progress-fill"></div>
-                        </div>
-                        <span id="progress-text">0%</span>
-                    </div>
-                    <div id="processing-log" class="processing-log"></div>
-                </div>
-            </div>
-        </section>
+    <div id="processing-status" class="processing-status hidden">
+    <div class="progress-container">
+    <div class="progress-bar">
+    <div class="progress-fill" id="progress-fill"></div>
+    </div>
+    <span id="progress-text">0%</span>
+    </div>
+    <div class="title-status hidden"></div>
+    <div id="processing-log" class="processing-log"></div>
+    </div>
+    </div>
+    </section>
 
-        <!-- Download Section -->
-        <section class="card section">
-            <div class="card__header">
-                <h2>Step 4: Download Processed Documents</h2>
-                <p class="text-secondary">Download your updated documents</p>
-            </div>
-            <div class="card__body">
-                <div id="download-section" class="download-section hidden">
-                    <div class="download-controls">
-                        <button type="button" class="btn btn--primary" id="download-all">
-                            Download All as ZIP
-                        </button>
-                    </div>
-                    <div id="processed-files" class="processed-files"></div>
-                </div>
-                <div id="no-processed-files" class="empty-state">
-                    <p class="text-secondary">No processed documents available for download</p>
-                </div>
-            </div>
-        </section>
+    <!-- Download Section -->
+    <section class="card section">
+    <div class="card__header">
+    <h2>Step 4: Download Processed Documents</h2>
+    <p class="text-secondary">Download your updated documents</p>
+    </div>
+    <div class="card__body">
+    <div id="download-section" class="download-section hidden">
+    <div class="download-controls">
+    <button type="button" class="btn btn--primary" id="download-all">
+    Download All as ZIP
+    </button>
+    </div>
+    <div id="processed-files" class="processed-files"></div>
+    </div>
+    <div id="no-processed-files" class="empty-state">
+    <p class="text-secondary">No processed documents available for download</p>
+    </div>
+    </div>
+    </section>
 
-        <!-- Error Handling & Troubleshooting -->
-        <section class="card section">
-            <div class="card__header">
-                <h2>Troubleshooting</h2>
-            </div>
-            <div class="card__body">
-                <div class="troubleshooting-content">
-                    <h4>Common Issues & Solutions:</h4>
-                    <ul class="troubleshooting-list">
-                        <li><strong>Protected Document Error:</strong> Disable Protected View in Word by going to File > Options > Trust Center > Trust Center Settings > Protected View and unchecking all options.</li>
-                        <li><strong>File Too Large:</strong> Maximum file size is 50MB. Try reducing the file size or processing fewer documents at once.</li>
-                        <li><strong>Corrupted File:</strong> Ensure the file is a valid .docx document and not password-protected.</li>
-                        <li><strong>No Headers/Footers Found:</strong> The template document must contain headers or footers. Add them in Word before uploading.</li>
-                        <li><strong>Browser Compatibility:</strong> Use Chrome, Firefox, or Edge for best results. Safari may have limited functionality.</li>
-                    </ul>
-                </div>
-                
-                <div id="error-log" class="error-log hidden">
-                    <h4>Error Details:</h4>
-                    <div id="error-details" class="error-details"></div>
-                    <button type="button" class="btn btn--secondary btn--sm" id="clear-errors">Clear Errors</button>
-                </div>
-            </div>
-        </section>
+    <!-- Error Handling & Troubleshooting -->
+    <section class="card section">
+    <div class="card__header">
+    <h2>Troubleshooting</h2>
+    </div>
+    <div class="card__body">
+    <div class="troubleshooting-content">
+    <h4>Common Issues &amp; Solutions:</h4>
+    <ul class="troubleshooting-list">
+    <li><strong>Images Not Appearing:</strong> This version uses a conservative approach - it starts with your target document (preserving all images) and only replaces headers/footers from the template.</li>
+    <li><strong>Protected Document Error:</strong> Disable Protected View in Word by going to File &gt; Options &gt; Trust Center &gt; Trust Center Settings &gt; Protected View and unchecking all options.</li>
+    <li><strong>File Too Large:</strong> Maximum file size is 50MB. Try reducing the file size or processing fewer documents at once.</li>
+    <li><strong>Corrupted File:</strong> Ensure the file is a valid .docx document and not password-protected.</li>
+    <li><strong>No Headers/Footers Found:</strong> The template document must contain headers or footers. Add them in Word before uploading.</li>
+    <li><strong>Title Extraction Issues:</strong> Ensure target documents have clear titles in document properties, headers, or as the first heading.</li>
+    <li><strong>Placeholder Not Found:</strong> Include "{Enter SOP Title}" in your template header where you want the title to appear.</li>
+    <li><strong>Browser Compatibility:</strong> Use Chrome, Firefox, or Edge for best results. Safari may have limited functionality.</li>
+    </ul>
+    </div>
+    
+    <div id="error-log" class="error-log hidden">
+    <h4>Error Details:</h4>
+    <div id="error-details" class="error-details"></div>
+    <button type="button" class="btn btn--secondary btn--sm" id="clear-errors">Clear Errors</button>
+    </div>
+    </div>
+    </section>
 
-        <footer class="app-footer">
-            <p class="text-secondary">
-                This application processes Word documents entirely in your browser. No files are uploaded to any server.
-                <br>
-                Supported format: .docx | Maximum file size: 50MB per file
-            </p>
-        </footer>
+    <footer class="app-footer">
+    <p class="text-secondary">
+    This application processes Word documents entirely in your browser. No files are uploaded to any server.
+    <br>
+    Supported format: .docx | Maximum file size: 50MB per file | Conservative approach preserves all target content
+    </p>
+    </footer>
     </div>
 
     <div id="preview-modal" class="modal hidden">
-        <div class="modal__content">
-            <div class="modal__header">
-                <h3 id="preview-filename"></h3>
-                <button type="button" class="btn-close" id="preview-modal-close">&times;</button>
-            </div>
-            <div class="modal__body">
-                <div id="preview-container"></div>
-            </div>
-        </div>
+    <div class="modal__content">
+    <div class="modal__header">
+    <h3 id="preview-filename"></h3>
+    <button type="button" class="btn-close" id="preview-modal-close">×</button>
+    </div>
+    <div class="modal__body">
+    <div id="preview-container"></div>
+    </div>
+    </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app_new.js"></script>
 </body>
 </html>
